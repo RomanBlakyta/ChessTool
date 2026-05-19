@@ -152,7 +152,6 @@ class Board:
         return self.square_under_attack(kr, kc, enemy_color)
 
     def is_valid_setup(self):
-        """Validates if the custom board state follows basic chess rules."""
         wk_count = 0
         bk_count = 0
 
@@ -295,10 +294,8 @@ class ChessAI:
     def __init__(self, depth=2):
         self.depth = depth
 
-        # --- Base Values ---
         self.PIECE_VALUES = {'K': 10000, 'Q': 900, 'R': 500, 'B': 330, 'N': 320, 'P': 100}
 
-        # --- Positional Scoring Grids ---
         self.PAWN_SCORES = [
             [900, 900, 900, 900, 900, 900, 900, 900],
             [50, 50, 50, 50, 50, 50, 50, 50],
@@ -460,7 +457,6 @@ class ChessAI:
         return best_move
 
 
-# --- Rendering & Main Loop ---
 def draw_board(screen):
     for r in range(ROWS):
         for c in range(COLS):
@@ -504,34 +500,24 @@ class Button:
 def draw_overlays(screen, board, moves, selected_square):
     overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
 
-    # (Optional) You can keep a background highlight for the selected piece here
-    # if you want to know which piece you currently clicked.
-    # --- RESTORED: Highlight the selected square (Yellow border) ---
     if selected_square:
         r, c = selected_square
-        # (200, 200, 50) is the yellow color, 5 is the thickness of the border
         pygame.draw.rect(screen, (200, 200, 50), pygame.Rect(c * SQ_SIZE, r * SQ_SIZE, SQ_SIZE, SQ_SIZE), 5)
-    # Draw the Move Targets and Capture Rings
     for move in moves:
         r, c = move
         center_x = c * SQ_SIZE + SQ_SIZE // 2
         center_y = r * SQ_SIZE + SQ_SIZE // 2
 
         if board.board[r][c] == '--':
-            # 1. Normal move (empty square): Draw a small solid dot
             pygame.draw.circle(overlay, (0, 0, 0, 80), (center_x, center_y), SQ_SIZE // 6)
         else:
-            # 2. Capture move (enemy piece): Draw a hollow ring OVER the piece
-            # The last argument '7' is the thickness of the ring's line
             pygame.draw.circle(overlay, (0, 0, 0, 80), (center_x, center_y), SQ_SIZE // 2 - 2, 5)
 
-    # Blit this transparent layer over the main screen
     screen.blit(overlay, (0, 0))
 
 
 def main():
     pygame.init()
-    # 512x512 board + 100px UI panel at the bottom
     screen = pygame.display.set_mode((WIDTH, HEIGHT + 100))
     pygame.display.set_caption("PyGame Chess Training Tool")
     clock = pygame.time.Clock()
@@ -543,10 +529,10 @@ def main():
     load_images()
 
     game_board = Board()
-    game_board = Board()
-    chess_ai = ChessAI(depth=2)  # <--- NEW: Create the AI Engine
+    chess_ai = ChessAI(depth=2)
     selected_square = None
     valid_moves = []
+    move_history = []
 
     current_mode = 'MENU'
     setup_color = 'w'
@@ -556,7 +542,7 @@ def main():
     game_over = False
     game_over_text = ""
 
-    # Menu Buttons (Shifted up and tightened to fit 5 buttons)
+    # Menu Buttons
     btn_w, btn_h = 250, 45
     start_y = HEIGHT // 2 - 140
     spacing = 55
@@ -572,7 +558,7 @@ def main():
     btn_setup_pve = Button("Play with computer", WIDTH // 2 - btn_w // 2, HEIGHT // 2 - 40, btn_w, btn_h)
     btn_setup_pvp = Button("Play 1 vs 1", WIDTH // 2 - btn_w // 2, HEIGHT // 2 + 30, btn_w, btn_h)
 
-    # --- The Rules Text ---
+    # The Rules Text
     rules_text = [
         "BASIC CHESS RULES:",
         "",
@@ -599,6 +585,7 @@ def main():
             pygame.display.flip()
             best_move = chess_ai.get_move(game_board)
             if best_move:
+                move_history.append(copy.deepcopy(game_board))
                 game_board.make_move(best_move[0], best_move[1])
                 all_moves = game_board.get_all_possible_moves(game_board.white_to_move)
                 if len(all_moves) == 0:
@@ -612,20 +599,23 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-            # --- MENU STATE ---
+            # Menu
             if current_mode == 'MENU':
                 if btn_pve.is_clicked(event):
                     current_mode = 'PVE'
                     game_board = Board()
+                    move_history = []
                     game_over = False
                 elif btn_pvp.is_clicked(event):
                     current_mode = 'PVP'
                     game_board = Board()
+                    move_history = []
                     game_over = False
                 elif btn_setup.is_clicked(event):
                     current_mode = 'SETUP'
                     game_board = Board()
                     game_board.board = [['--'] * 8 for _ in range(8)]
+                    move_history = []
                     game_over = False
                     setup_error_text = ""
                 elif btn_rules.is_clicked(event):  # NEW LOGIC
@@ -633,13 +623,25 @@ def main():
                 elif btn_quit.is_clicked(event):
                     running = False
 
-            # --- ALL OTHER STATES ---
+            # Other
             else:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         current_mode = 'MENU'
                         selected_square = None
                         valid_moves = []
+
+                    if event.key == pygame.K_z and current_mode in ['PVP', 'PVE'] and len(move_history) > 0:
+                        if current_mode == 'PVE' and len(move_history) > 1:
+                            move_history.pop()
+                            game_board = move_history.pop()
+                        else:
+                            game_board = move_history.pop()
+
+                        selected_square = None
+                        valid_moves = []
+                        game_over = False
+                        game_over_text = ""
 
                     if current_mode == 'SETUP':
                         if event.key == pygame.K_RETURN:
@@ -682,6 +684,7 @@ def main():
                         else:
                             piece = game_board.board[row][col]
                             if selected_square and (row, col) in valid_moves:
+                                move_history.append(copy.deepcopy(game_board))
                                 game_board.make_move(selected_square, (row, col))
                                 selected_square = None
                                 valid_moves = []
@@ -711,10 +714,11 @@ def main():
                     elif current_mode == 'SETUP_CHOICE':
                         if btn_setup_pve.is_clicked(event):
                             current_mode = 'PVE'
+                            move_history = []
                         elif btn_setup_pvp.is_clicked(event):
                             current_mode = 'PVP'
+                            move_history = []
 
-        # --- DRAWING ROUTINE ---
         if current_mode == 'MENU':
             screen.fill(UI_BG)
             title_surf = title_font.render("CHESS TRAINING TOOL", True, (255, 255, 255))
@@ -723,13 +727,12 @@ def main():
                 btn.draw(screen, ui_font)
 
         elif current_mode == 'RULES':
-            screen.fill(UI_BG)  # Fill the whole screen with dark grey
-            # Render the text line by line
+            screen.fill(UI_BG)
             y_offset = 30
             for line in rules_text:
                 text_surface = rules_font.render(line, True, (220, 220, 220))
                 screen.blit(text_surface, (40, y_offset))
-                y_offset += 30  # Space between lines
+                y_offset += 30
 
         else:
             screen.fill(UI_BG)
@@ -745,10 +748,16 @@ def main():
                 btn_setup_pvp.draw(screen, ui_font)
 
             # Draw UI footer
-            turn_text = "White to Move" if game_board.white_to_move else "Black to Move"
+            move_number = (len(move_history) // 2) + 1
+
+            turn_text = f"Move {move_number}: White to Move" if game_board.white_to_move else f"Move {move_number}: Black to Move"
 
             if current_mode == 'SETUP':
-                turn_text = f"Turn: {'White' if game_board.white_to_move else 'Black'} | Paint: {setup_color}{setup_piece}"
+                piece_names = {'P': 'Pawn', 'R': 'Rook', 'N': 'Knight', 'B': 'Bishop', 'Q': 'Queen', 'K': 'King'}
+                paint_color = 'White' if setup_color == 'w' else 'Black'
+                paint_piece = piece_names[setup_piece]
+
+                turn_text = f"Turn: {'White' if game_board.white_to_move else 'Black'} | Piece: {paint_color} {paint_piece}"
                 if setup_error_text:
                     info_str = f"ERROR: {setup_error_text}"
                 else:
@@ -762,7 +771,7 @@ def main():
             else:
                 if game_board.in_check(game_board.white_to_move):
                     turn_text += " [CHECK!]"
-                info_str = "Press ESC to return to Main Menu"
+                info_str = "Press ESC to return to Main Menu                        Press Z to undo move"
 
             ui_surf1 = ui_font.render(turn_text, True, (255, 255, 255))
             info_color = (255, 255, 100) if setup_error_text else (200, 200, 200)
